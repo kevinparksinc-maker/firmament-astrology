@@ -53,7 +53,7 @@ export function InterpretationPanel({ chart, initialMode = "combined" }: { chart
     if (!chapter) return;
     setActiveChapter(chapter.id);
     updateChapter(chapter.id, { status: "loading", error: undefined });
-    const completed = base.chapters.slice(0, index).filter(item => item.status === "complete").map(item => item.title);
+    const completed = base.chapters.slice(0, index).filter(item => item.status === "complete").map(item => `## ${item.title}\n${item.content ?? ""}`);
     try {
       const result = await chapterMutation.mutateAsync({ chart, mode, intelligence: base.intelligence, chapterId: chapter.id as never, completedChapters: completed });
       setInterpretation(current => current ? { ...current, chapters: current.chapters.map(item => item.id === chapter.id ? { ...item, status: "complete", content: result } : item) } : current);
