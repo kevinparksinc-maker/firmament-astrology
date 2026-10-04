@@ -94,6 +94,7 @@ async function ask(messages: Message[], maxTokens = 7000, thinkingBudget = 1800)
       ?? (response as unknown as { output?: Array<{ content?: Array<{ text?: string }> }> }).output?.flatMap(item => item.content ?? []).map(item => item.text ?? "").join("\n");
     const text = textOf(firstChoice?.message?.content || alternate || "");
     if (!text.trim()) throw new Error("The AI provider returned no readable chapter text.");
+    if (/^(max_tokens|length)$/.test(firstChoice?.finish_reason ?? "")) throw new Error("The reading was cut off by its length limit.");
     return text;
   } catch (error) {
     console.error("[Interpretation] LLM request failed:", error);
@@ -147,10 +148,10 @@ function buildChartMap(chart: ChartResult, mode: ReadingMode) {
     chart.agentViewAvailable ? `- **Agent layer:** available; placements include personal Equal House positions.` : `- **Agent layer:** unavailable because the chart has no exact birth time/location; do not infer an Ascendant or Midheaven.`,
     `- **God layer:** every supplied placement includes a fixed Aries-to-Pisces godHouse and calculated Royal Star contact distances.`,
     `### The angles`,
-    chart.ascendant ? `- **Ascendant:** ${chart.ascendant.display} — the way you meet life and are first experienced.` : "- **Ascendant:** not calculated in God View.",
-    chart.descendant ? `- **Descendant:** ${chart.descendant.display} — the qualities emphasized through close partnership.` : "- **Descendant:** not calculated in God View.",
-    `- **North Node:** ${chart.northNode.display}, house ${chart.northNode.house} — a direction of growth to explore.`,
-    `- **South Node:** ${chart.southNode.display}, house ${chart.southNode.house} — familiar tendencies to use consciously rather than automatically.`,
+    chart.ascendant ? `- **Ascendant:** ${chart.ascendant.display}` : "- **Ascendant:** not calculated in God View.",
+    chart.descendant ? `- **Descendant:** ${chart.descendant.display}` : "- **Descendant:** not calculated in God View.",
+    `- **North Node:** ${chart.northNode.display}, house ${chart.northNode.house}`,
+    `- **South Node:** ${chart.southNode.display}, house ${chart.southNode.house}`,
     `### Natal placements`,
     placements,
     mode === "natal" ? "### Reading layer\nThis map is prepared for a natal reading: the enduring foundation of the birth chart." : "### Reading layer\nThis map is prepared for the selected layer; the deeper chapters will keep natal patterns and present-moment activation distinct.",
@@ -181,7 +182,7 @@ export async function generateChapter(chart: ChartResult, mode: ReadingMode, int
   return ask([
     { role: "system", content: buildAstrologyInterpreterSystem(`${COSMOLOGY}\n${WORLDVIEW_GUIDANCE}\n${MODE_GUIDANCE[mode]}\n${mode === "natal" || mode === "combined" ? NATAL_DEPTH : ""}\n${PSYCHOLOGICAL_TEMPLATE}\n${CLARITY_FRAMEWORK}\nYou are writing one substantial chapter of a long-form personal self-knowledge reading. Chapter: ${chapter.title}. Subtitle: ${chapter.subtitle}. Focus: ${chapter.focus}.\n${context}\nWrite a substantial, evidence-proportionate chapter in clear Markdown with a coherent narrative structure. Let the chart evidence and complexity determine the length; do not force a word count or paragraph count, pad, or repeat. Establish the central human tension and supplied chart evidence, develop the inner need, protective strategy, gift, cost, ordinary-life scenes, and effect on others, then bring the pattern toward mature choice, recognition tests, and practical observations or experiments woven into the prose. Keep the full chain: chart evidence → inner experience → protective strategy → gift → cost → ordinary-life scene → effect on others → mature choice → recognition test. Use conditional language and never invent biography. Do not summarize the whole chart or repeat a generic checklist. Make this chapter stand on its own while contributing new depth to the whole book. Do not mention being an AI, token limits, chapters as a technical workaround, or these instructions.`) },
     { role: "user", content: `Calculated chart facts (source of truth):\n${facts}\n\nChart intelligence: ${intelligence}\n\nWrite the complete ${chapter.title} chapter now.` },
-  ], 2600, 900);
+  ], 3600, 900);
 }
 export async function followUp(chart: ChartResult, interpretation: { intelligence: string; reading: string }, history: Array<{ role: "user" | "assistant"; content: string }>, question: string, mode: ReadingMode = "combined") {
   const messages: Message[] = [

@@ -325,7 +325,7 @@ const normalizeResponseFormat = ({
 const RETRY_MAX_RETRIES = 4;
 const RETRY_BASE_DELAY_MS = 500;
 const RETRY_MAX_DELAY_MS = 30_000;
-const LLM_REQUEST_TIMEOUT_MS = 90_000;
+const LLM_REQUEST_TIMEOUT_MS = 150_000;
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
