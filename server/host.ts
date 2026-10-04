@@ -26,46 +26,7 @@ RESPONSE PLAYBOOK
 
 Be concise unless the visitor asks for depth. Use clean bullets or numbered steps when teaching the interface. You are an educational product guide, not a substitute for professional care.`;
 
-const QUICK_HOST_ANSWERS = [
-  {
-    matches: /how do i use|how does this app work|where do i start|what do i click/i,
-    answer: `### Start here
-
-1. Enter the **birth location, birth date, and birth time**. Birth time anchors the Ascendant and personal houses in Agent View; God View can use a date-only natal reference when birth time is unknown.
-2. Optional: enter a **current transit location**. Leave transit date and time blank for the current sky, or enter both to inspect a specific moment.
-3. Select **Calculate Hybrid Chart**.
-4. Explore the interactive wheel: click a house, natal placement, transit body, or aspect to inspect it.
-5. Choose **Natal chart**, **Transit reading**, or **Natal + transit**, then ask the Firmament Host follow-up questions.
-
-Next action: start with the Dallas validation profile or enter your own birth details, then select **Calculate Hybrid Chart**.`,
-  },
-  {
-    matches: /what do i need.*natal|natal chart.*need|birth information/i,
-    answer: `### Information needed
-
-For a natal chart, enter your **birth location, birth date, and birth time**. The location resolves latitude, longitude, and timezone; the date and time anchor the sky and local houses.
-
-Next action: fill in those three birth fields and select **Calculate Hybrid Chart**.`,
-  },
-  {
-    matches: /what are transits|transit.*chart wheel|difference.*natal.*transit/i,
-    answer: `### Natal, transit, and combined views
-
-- **Natal chart** is the enduring foundation: placements, houses, angles, and repeating patterns from birth.
-- **Transit reading** is the selected or current moving sky and what it is activating now.
-- **Natal + transit** shows how the present moment meets the natal foundation.
-
-The wheel is interactive: click a house, planet, transit, or aspect to reveal its context. Next action: calculate a chart, then select the reading mode you want.`,
-  },
-];
-
-function quickHostAnswer(question: string) {
-  return QUICK_HOST_ANSWERS.find(item => item.matches.test(question))?.answer;
-}
-
 export async function askHost(history: Array<{ role: "user" | "assistant"; content: string }>, question: string) {
-  const quickAnswer = quickHostAnswer(question);
-  if (quickAnswer) return quickAnswer;
   const messages: Message[] = [
     { role: "system", content: buildAstrologyInterpreterSystem(HOST_SYSTEM) },
     ...withCurrentQuestion(history, question, 4),
