@@ -37,6 +37,26 @@ describe("horary without a natal profile", () => {
   });
 });
 
+describe("transit timing and house-frame contracts", () => {
+  it("keeps a selected transit moment when no transit city is supplied", async () => {
+    const chart = await calculateChart({ ...dallas, worldview: "agent-vs-god", readingScope: "combined", transitDate: "2025-01-15", transitTime: "14:30" });
+    expect(chart.transitDate).toBe("2025-01-15T20:30:00.000Z");
+    expect(chart.transitMomentPrecision).toBe("exact");
+    expect(chart.transitHouseFrame).toBe("natal-location");
+  });
+
+  it("supports a God View date-only transit without pretending the Moon degree is exact", async () => {
+    const chart = await calculateChart({ location: "", latitude: 0, longitude: 0, timezone: "UTC", date: "", time: "", transitDate: "2025-01-15", transitTime: "", transitTimezone: "", worldview: "god", readingScope: "transit", birthTimeKnown: false });
+    expect(chart.transitDate).toBe("2025-01-15T12:00:00.000Z");
+    expect(chart.transitMomentPrecision).toBe("date-only-reference");
+    expect(chart.transitHouseFrame).toBe("god-fixed");
+  });
+
+  it("rejects partial transit moments instead of falling back to the current sky", async () => {
+    await expect(calculateChart({ ...dallas, worldview: "agent", readingScope: "combined", transitDate: "2025-01-15" })).rejects.toThrow(/exact transit date, time, and timezone/i);
+  });
+});
+
 describe("God View live sky", () => {
   it("does not create natal contacts or personal-house comparisons", async () => {
     const chart = await calculateChart({

@@ -250,7 +250,7 @@ export async function calculateHoraryChart(input: HoraryInput): Promise<HoraryCh
     `Question: ${input.question}`,
     `Question asked at: ${askedAt} UTC (${input.date} ${input.time} local; ${input.timezone})`,
     `Location: ${input.location} (${input.latitude.toFixed(4)}, ${input.longitude.toFixed(4)})`,
-    `House system: Topocentric Equal House, using topocentric planetary positions and 30-degree cusps from the calculated Ascendant.`,
+    `House system: Agent View Equal House, with geocentric planetary longitudes, observer-specific Moon parallax, and 30-degree cusps from the calculated Ascendant.`,
     `Question topic: ${topic.label} (${ordinal(input.topicHouse)} house from the ${input.subject === "querent" ? "querent" : "other person"}).`,
     `Ascendant: ${ascendant.display} (${ascendantSign}); querent's primary ruler: ${querentRuler}.`,
     `Person asked about: ${input.subject === "querent" ? "the querent (House 1)" : "another person (House 7)"}; that person's ruler: ${subjectRuler}.`,
