@@ -18,6 +18,8 @@ import {
   type Worldview,
   type DualPlacement,
 } from "./astrologyCore";
+import type { PatternRecognitionReport } from "./patternRecognition";
+import { buildGenesisPatternReport } from "./genesisPatternReport";
 
 export type ChartInput = {
   location: string;
@@ -88,6 +90,7 @@ export type ChartResult = {
   transitHouseFrame: TransitHouseFrame;
   transits: TransitRow[];
   validation: { passed: boolean; notes: string[] };
+  patternRecognition?: PatternRecognitionReport;
 };
 
 export function parseLocalToUtc(date: string, time: string, timezone: string) {
@@ -559,7 +562,7 @@ export async function calculateChart(input: ChartInput): Promise<ChartResult> {
       const found = aspectBetween(transit.longitude, natal.longitude);
       return found ? [{ natalName: natal.name, ...found }] : [];
     });
-  return {
+  const chartResult = {
     input,
     worldview,
     readingScope,
@@ -585,6 +588,7 @@ export async function calculateChart(input: ChartInput): Promise<ChartResult> {
     ],
     validation,
   };
+  return { ...chartResult, patternRecognition: buildGenesisPatternReport(chartResult) };
 }
 
 export async function geocodeLocation(query: string) {
