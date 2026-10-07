@@ -97,6 +97,13 @@ function analyzeWestern(frame: PatternFrame, chart: Chart): PatternFinding[] {
     for (let j = i + 1; j < planets.length; j += 1) {
       const first = planets[i]!;
       const second = planets[j]!;
+      const firstIsNorthNode = first.planet === "North Node" || first.planet === "Rahu";
+      const firstIsSouthNode = first.planet === "South Node" || first.planet === "Ketu";
+      const secondIsNorthNode = second.planet === "North Node" || second.planet === "Rahu";
+      const secondIsSouthNode = second.planet === "South Node" || second.planet === "Ketu";
+      // The nodes form a 180-degree axis by definition; counting that as a
+      // natal opposition manufactures the same "tension" in every chart.
+      if ((firstIsNorthNode && secondIsSouthNode) || (firstIsSouthNode && secondIsNorthNode)) continue;
       const distance = angleDifference(first.fixedBackgroundLongitude, second.fixedBackgroundLongitude);
       const aspects = [
         [0, 8, "conjunction"],
@@ -237,13 +244,18 @@ function analyzeVedic(frame: PatternFrame, chart: Chart): PatternFinding[] {
     });
   }
 
-  for (const node of planets.filter((planet) => planet.planet === "Rahu" || planet.planet === "Ketu")) {
+  for (const node of planets.filter((planet) => ["Rahu", "Ketu", "North Node", "South Node"].includes(planet.planet))) {
     addFinding(findings, {
       id: `vedic-node-${node.planet}`,
       family: "vedic-kp",
       name: `${node.planet} house activation`,
       strength: 0.58,
-      evidence: [`${node.planet} in ${node.sign}`, `H${node.house}`, `${node.nakshatra} / ${node.subLord}`],
+      evidence: [
+        `${node.planet} in ${node.sign}`,
+        `H${node.house}`,
+        ...(node.nakshatra ? [`Nakshatra ${node.nakshatra}`] : []),
+        ...(node.subLord ? [`Sub-Lord ${node.subLord}`] : []),
+      ],
       meaning: VEDIC_MEANINGS.node,
       relevance: "The node placement can amplify or redirect the ordinary reading of its house and mansion.",
     });

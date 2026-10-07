@@ -5,6 +5,8 @@ vi.mock("./_core/llm", () => ({ invokeLLM: mocked.invokeLLM }));
 
 import { askHost } from "./host";
 import { followUp, generateChapter } from "./interpretation";
+import { calculateChart } from "./astronomy";
+import { buildDualFrameEvidence } from "./genesisPatternReport";
 import type { ChartResult } from "./astronomy";
 import { ASTROLOGY_INTERPRETATION_ADAPTER, MASTER_INTERPRETER_PROMPT } from "./master-interpreter";
 
@@ -65,6 +67,41 @@ describe("Master Interpreter prompt coverage", () => {
     expect(user).toContain("INTERNAL GENESIS KNOWLEDGE");
     expect(user).toContain("READING PLAN");
     expect(user).toContain("Test thread");
+  });
+
+  it("passes calculated God/Agent house meanings and Genesis rule findings into the real natal chapter prompt", async () => {
+    const natal = await calculateChart({
+      location: "Dallas, Texas, USA",
+      latitude: 32.7767,
+      longitude: -96.797,
+      timezone: "America/Chicago",
+      date: "1986-11-20",
+      time: "10:06",
+      worldview: "agent-vs-god",
+      readingScope: "natal",
+    });
+    const sun = buildDualFrameEvidence(natal).find((row) => row.name === "Sun");
+    expect(sun?.agentView.available).toBe(true);
+    if (!sun || !sun.agentView.available) throw new Error("The fixture should have both natal house frames.");
+
+    await generateChapter(natal, "natal", "", "identity", [], "");
+    const request = mocked.invokeLLM.mock.calls.at(-1)?.[0] as { messages: Array<{ role: string; content: string }> };
+    const user = request.messages.find((message) => message.role === "user")?.content ?? "";
+
+    expect(user).toContain("INTERNAL GENESIS KNOWLEDGE");
+    expect(user).toContain(`God View: House ${sun.godView.house} (${sun.godView.label}; ${sun.godView.themes.join(", ")})`);
+    expect(user).toContain(`Agent View: House ${sun.agentView.house} (${sun.agentView.label}; ${sun.agentView.themes.join(", ")})`);
+    expect(sun.relationship).not.toBeNull();
+    if (!sun.relationship) throw new Error("The natal fixture should have a calculated God/Agent relationship.");
+    expect(user).toContain(sun.relationship.translation);
+    expect(user).toContain(sun.relationship.synthesis);
+    const natalFindings = [
+      ...natal.patternRecognition!.godView.findings.slice(0, 5),
+      ...natal.patternRecognition!.agentView.findings.slice(0, 5),
+    ];
+    expect(natalFindings.length).toBeGreaterThan(0);
+    for (const finding of natalFindings) expect(user).toContain(finding.meaning);
+    expect(systemPromptFromLastCall()).toContain("Genesis is internal astrology knowledge");
   });
 
   it("attaches the Master Interpreter to chart-anchored interpretive follow-ups", async () => {
