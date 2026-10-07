@@ -57,10 +57,12 @@ describe("Master Interpreter prompt coverage", () => {
     const user = request.messages.find(message => message.role === "user")?.content ?? "";
     expect(system).not.toContain(MASTER_INTERPRETER_PROMPT);
     expect(system).toContain("FACTS");
+    expect(system).toContain(ASTROLOGY_INTERPRETATION_ADAPTER);
     expect(system).toContain("VOICE");
     expect(system.indexOf("VOICE")).toBeGreaterThan(system.indexOf("METHOD"));
     expect(system.split(/\s+/).length).toBeLessThan(900);
     expect(user).toContain("CHART EVIDENCE SHEET");
+    expect(user).toContain("INTERNAL GENESIS KNOWLEDGE");
     expect(user).toContain("READING PLAN");
     expect(user).toContain("Test thread");
   });

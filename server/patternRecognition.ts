@@ -1,4 +1,4 @@
-export type PatternFrame = "God View" | "AgentView";
+export type PatternFrame = "God View" | "Agent View";
 export type PatternFamily = "western" | "vedic-kp" | "cross-system";
 
 export type PatternFinding = {
@@ -24,8 +24,9 @@ export type PatternRecognitionReport = {
   question: string;
   godView: FramePatternAnalysis;
   agentView: FramePatternAnalysis;
+  agentViewAvailable: boolean;
   convergence: {
-    state: "convergent" | "counterforce" | "mixed";
+    state: "convergent" | "counterforce" | "mixed" | "unavailable";
     sharedThemes: string[];
     explanation: string;
   };
@@ -41,8 +42,8 @@ type Planet = {
   sign: string;
   degreeInHouse: number;
   nakshatra: string;
-  starLord: string;
-  subLord: string;
+  starLord?: string;
+  subLord?: string;
   isRetrograde: boolean;
 };
 
@@ -60,6 +61,7 @@ const WESTERN_MEANINGS: Record<string, string> = {
   stellium: "intense focus and concentration in one sign or life area",
   angular: "high visibility and stronger ability to manifest through action",
   retrograde: "review, delay, reversal, or an inward-turning expression of the planet",
+  quincunx: "a mismatch that asks for adjustment because the two functions do not naturally share a rhythm",
 };
 
 const VEDIC_MEANINGS: Record<string, string> = {
@@ -134,7 +136,7 @@ function analyzeWestern(frame: PatternFrame, chart: Chart): PatternFinding[] {
         relevance: `The concentration centers on houses ${unique(members.map((planet) => planet.house)).join(", ")}.`,
       });
     }
-  }
+  });
 
   const byHouse = new Map<number, Planet[]>();
   planets.forEach((planet) => byHouse.set(planet.house, [...(byHouse.get(planet.house) ?? []), planet]));
@@ -151,7 +153,7 @@ function analyzeWestern(frame: PatternFrame, chart: Chart): PatternFinding[] {
         relevance: `The chart concentrates attention in H${house}.`,
       });
     }
-  }
+  });
 
   for (const planet of planets.filter((item) => item.isRetrograde)) {
     addFinding(findings, {
@@ -176,7 +178,9 @@ function analyzeVedic(frame: PatternFrame, chart: Chart): PatternFinding[] {
 
   planets.forEach((planet) => {
     byNakshatra.set(planet.nakshatra, [...(byNakshatra.get(planet.nakshatra) ?? []), planet]);
-    bySubLord.set(planet.subLord, [...(bySubLord.get(planet.subLord) ?? []), planet]);
+    if (planet.subLord) {
+      bySubLord.set(planet.subLord, [...(bySubLord.get(planet.subLord) ?? []), planet]);
+    }
   });
 
   byNakshatra.forEach((members, nakshatra) => {
@@ -191,7 +195,7 @@ function analyzeVedic(frame: PatternFrame, chart: Chart): PatternFinding[] {
         relevance: `The shared mansion creates a repeated Vedic motif in this ${frame} frame.`,
       });
     }
-  }
+  });
 
   bySubLord.forEach((members, subLord) => {
     if (members.length >= 2) {
@@ -205,7 +209,7 @@ function analyzeVedic(frame: PatternFrame, chart: Chart): PatternFinding[] {
         relevance: `The repeated Sub-Lord makes ${subLord} a candidate for the chart's controlling interpretive thread.`,
       });
     }
-  }
+  });
 
   const upachaya = planets.filter((planet) => [3, 6, 10, 11].includes(planet.house));
   if (upachaya.length >= 2) {
@@ -286,16 +290,27 @@ function analyzeFrame(frame: PatternFrame, chart: Chart): FramePatternAnalysis {
 
 export function buildPatternRecognitionReport(input: {
   godView: Chart;
-  agentView: Chart;
+  agentView: Chart | null;
   question?: string;
 }): PatternRecognitionReport {
   const godView = analyzeFrame("God View", input.godView);
-  const agentView = analyzeFrame("AgentView", input.agentView);
+  const agentViewAvailable = input.agentView !== null;
+  const agentView: FramePatternAnalysis = input.agentView
+    ? analyzeFrame("Agent View", input.agentView)
+    : {
+        frame: "Agent View",
+        findings: [],
+        themes: [],
+        strongestPlanets: [],
+        summary: "Agent View is unavailable because this chart does not have the exact birth time and location required to calculate personal houses.",
+      };
   const sharedThemes = godView.themes.filter((theme) => agentView.themes.includes(theme));
   const godTop = godView.findings.slice(0, 3).map((finding) => finding.name);
   const agentTop = agentView.findings.slice(0, 3).map((finding) => finding.name);
-  const state = sharedThemes.length >= 2 ? "convergent" : sharedThemes.length === 0 ? "counterforce" : "mixed";
-  const explanation = state === "convergent"
+  const state = !agentViewAvailable ? "unavailable" : sharedThemes.length >= 2 ? "convergent" : sharedThemes.length === 0 ? "counterforce" : "mixed";
+  const explanation = state === "unavailable"
+    ? "Only the fixed God frame is available; no God/Agent comparison or convergence claim is made without personal-house data."
+    : state === "convergent"
     ? `Both frames repeat ${sharedThemes.join(" and ")}; AgentView appears to localize rather than overturn the fixed-field pattern.`
     : state === "counterforce"
       ? "The fixed field and local frame do not share a dominant theme, so the interpretation should retain counterforce instead of forcing agreement."
@@ -306,12 +321,14 @@ export function buildPatternRecognitionReport(input: {
     question,
     godView,
     agentView,
+    agentViewAvailable,
     convergence: { state, sharedThemes, explanation },
-    plainLanguage: `${explanation} In plain terms, the chart should be read through ${[...sharedThemes, ...godView.themes, ...agentView.themes].filter((theme, index, list) => list.indexOf(theme) === index).slice(0, 4).join(", ") || "the strongest returned placements"}. This report identifies patterns from the engine's calculated facts; it does not replace the sports prediction or claim certainty.`,
+    plainLanguage: `${explanation} In plain terms, the chart should be read through ${[...sharedThemes, ...godView.themes, ...agentView.themes].filter((theme, index, list) => list.indexOf(theme) === index).slice(0, 4).join(", ") || "the strongest returned placements"}. This report identifies patterns from calculated chart facts; it is an interpretive aid, not a certainty claim.`,
     limitations: [
-      "Pattern meanings are the Genesis interpretation scaffold currently wired locally; external source retrieval is a later enrichment layer.",
+      "Pattern meanings are the deterministic Genesis interpretation scaffold; the natal chapter writer receives the findings as structured evidence.",
       "Western and Vedic/KP findings are shown separately before cross-frame synthesis.",
-      "The report explains calculated signatures and does not change the existing baseline, God View, AgentView, or winner calculation.",
+      "No KP star lord or sub-lord is inferred when the chart calculator has not supplied one.",
+      ...(!agentViewAvailable ? ["The Agent frame is unavailable for this chart, so no cross-frame conclusion is claimed."] : []),
     ],
   };
 }

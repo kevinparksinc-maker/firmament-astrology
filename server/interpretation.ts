@@ -2,7 +2,8 @@ import { invokeLLM, type Message } from "./_core/llm";
 import { withCurrentQuestion } from "./_core/conversation";
 import type { ChartResult, ChartRow } from "./astronomy";
 import { formatInZone } from "../shared/time";
-import { buildAstrologyInterpreterSystem } from "./master-interpreter";
+import { ASTROLOGY_INTERPRETATION_ADAPTER, buildAstrologyInterpreterSystem } from "./master-interpreter";
+import { buildDualFrameEvidence } from "./genesisPatternReport";
 
 const COSMOLOGY = `You are The Firmament's unified Vedic / Hellenistic / Babylonian / Hermetic-informed interpreter and the user's guardian-guide through the reading. The guardian-guide is a voice of love, care, protection, resonance, and steady presence—not a claim that the AI is literally a supernatural being. Speak with the grounded care of a wise father or trusted elder giving advice to his son: protective but not possessive, firm but not harsh, practical rather than sentimental, and focused on helping the person build the best life available to them. Offer guidance about character, discipline, patience, self-respect, responsibility, money, work, boundaries, courage, relationships, and choosing long-term strength over short-term relief when the supplied chart supports it. Do not assume the user's gender, family history, or need for a male authority; make the paternal tone available as a style of care, not a replacement for real relationships.
 
@@ -55,15 +56,44 @@ function chartFacts(chart: ChartResult, mode: ReadingMode) {
     readingScope: chart.readingScope,
     agentViewAvailable: chart.agentViewAvailable,
     godPlacements: chart.godPlacements,
-    frameRelationships: chart.movingBodies
-      .filter(row => row.frameRelationship)
-      .map(row => ({ body: row.name, longitude: row.longitude, display: row.display, godHouse: row.godHouse, agentHouse: row.agentHouse, relationship: row.frameRelationship })),
+    dualFrameEvidence: buildDualFrameEvidence(chart),
+    genesisPatternReport: chart.patternRecognition,
     ...(mode === "natal" ? {} : { transitDate: chart.transitDate, transits: chart.transits }),
   };
 }
 
 function textOf(content: string | Array<{ type: string; text?: string }>) {
   return typeof content === "string" ? content : content.map(part => part.text ?? "").join("");
+}
+
+function buildGenesisEvidence(chart: ChartResult) {
+  const frameLines = buildDualFrameEvidence(chart).map(row => {
+    const agent = row.agentView.available
+      ? `Agent View: House ${row.agentView.house} (${row.agentView.label}; ${row.agentView.themes.join(", ")})`
+      : "Agent View: unavailable; no personal house inferred";
+    const relationship = row.relationship
+      ? `${row.relationship.type}; ${row.relationship.translation} Synthesis: ${row.relationship.synthesis}`
+      : "No cross-frame relationship is claimed.";
+    return `- ${row.name} ${row.display} (${row.sign}) | God View: House ${row.godView.house} (${row.godView.label}; ${row.godView.themes.join(", ")}) | ${agent} | Relationship: ${relationship}`;
+  });
+  const report = chart.patternRecognition;
+  const findingLines = report
+    ? [
+        `Genesis status: ${report.convergence.state}. ${report.convergence.explanation}`,
+        ...report.godView.findings.slice(0, 5).map(finding => `- God View pattern: ${finding.name}; evidence ${finding.evidence.join(", ")}; ${finding.meaning}`),
+        ...(report.agentViewAvailable
+          ? report.agentView.findings.slice(0, 5).map(finding => `- Agent View pattern: ${finding.name}; evidence ${finding.evidence.join(", ")}; ${finding.meaning}`)
+          : []),
+      ]
+    : ["Genesis pattern report unavailable."];
+  return [
+    "## INTERNAL GENESIS KNOWLEDGE — use to reason; do not show as a separate report",
+    "These are rule-derived meanings and pattern relationships for the private interpretation pipeline. Synthesize them into the user's reading; never mention Genesis, report scores, or dump these entries as output.",
+    "### Canonical God / Agent comparison (same astronomical placements; explicit calculated houses)",
+    ...frameLines,
+    "### Genesis pattern knowledge and findings",
+    ...findingLines,
+  ].join("\n");
 }
 
 export type ReadingMode = "natal" | "transit" | "combined";
@@ -144,6 +174,7 @@ function buildChartMap(chart: ChartResult, mode: ReadingMode) {
     `- **South Node:** ${chart.southNode.display}, house ${chart.southNode.house}`,
     `### Natal placements`,
     placements,
+    buildGenesisEvidence(chart),
     mode === "natal" ? "### Reading layer\nThis map is prepared for a natal reading: the enduring foundation of the birth chart." : "### Reading layer\nThis map is prepared for the selected layer; the deeper chapters will keep natal patterns and present-moment activation distinct.",
     includeTransit ? `### Selected transit moment\n${transitMoment} at ${chart.input.transitLocation ?? chart.input.location} (${new Date(chart.transitDate).toISOString()}).` : "",
     includeTransit ? (contacts ? `### Supplied natal contacts\n${contacts}` : "### Supplied natal contacts\nNo close contacts were found within the calculation's configured orb.") : "",
@@ -194,7 +225,8 @@ function buildEvidenceSheet(chart: ChartResult, mode: ReadingMode) {
     "",
     `Fixed stars (backdrop positions): ${chart.frozenStars.map(star => `${star.name} ${star.display}`).join("; ")}`,
     "",
-    "No aspects between natal planets were calculated. Do not state any.",
+    "The Genesis section below is the only source for natal pattern/aspect findings. Do not add unlisted aspects or patterns.",
+    buildGenesisEvidence(chart),
   ];
   if (mode !== "natal") {
     const zone = input.transitTimezone || input.timezone || "UTC";
@@ -275,15 +307,17 @@ function chapterPlan(analysis: string, chapterId: string) {
   if (threads.length) out.push(isMirror ? "All threads to weave together:" : "Threads this chapter carries:", ...threads.map(thread => `- ${thread.title}: ${thread.insight} Evidence: ${thread.evidence.join("; ")}.`));
   if (plan.tensions.length) out.push("Tensions in the chart:", ...plan.tensions.map(tension => `- ${tension.between}: ${tension.insight} Evidence: ${tension.evidence.join("; ")}.`));
   if (mine && !isMirror) out.push(`Evidence that is the main subject of THIS chapter: ${mine.evidence.join("; ")}.`, `Angle for this chapter: ${mine.angle}`, "Other chapters own the remaining placements. Mention one of them here only briefly, to connect threads.");
-  if (isMirror) out.push("The Mirror owns no placements of its own. It names the few threads that actually connect the chapters, the gifts, blind spots, and loops they create together, and one honest next step.");
+  if (isMirror) out.push("The Mirror owns no placements of its own. Use Genesis internally to connect the fixed God frame, the Agent's lived house frame, and the repeating patterns already established across the chapters. Produce one coherent human synthesis of the natal chart and one honest next step. Do not mention Genesis, internal scores, or report labels, and do not merely list the frame data.");
   return out.join("\n");
 }
 
-const ANALYSIS_SYSTEM = `You are the silent first reader of a calculated astrology chart. No one will see your output. It is a reading plan that chapter writers will follow, so make it exact and useful.
+const ANALYSIS_SYSTEM = `${ASTROLOGY_INTERPRETATION_ADAPTER}
 
-Read the whole evidence sheet before deciding anything. Find the 4 to 6 main threads of this chart: evidence that repeats, angular emphasis, the nodal axis, close star contacts, and in transit modes the strongest contacts. Find 2 to 4 real tensions: places where two parts of the chart pull against each other. Then assign evidence to chapters so the chapters do not overlap: each placement is the main subject of at most one chapter. The Mirror chapter gets no evidence of its own, only synthesis.
+You are the silent first reader of a calculated astrology chart. No one will see your output. It is a reading plan that chapter writers will follow, so make it exact and useful.
 
-Rules: use only what the sheet states. Never invent an aspect, house, sign, or star contact; no natal-to-natal aspects were calculated. Evidence entries must be exact point names from the sheet, such as "Sun", "Moon", "Ascendant", "North Node", "Regulus", "Transit Saturn". Write insights as hypotheses about how a person may experience the pattern, in plain language.
+Read the whole evidence sheet before deciding anything. Treat the canonical God/Agent comparison and supplied Genesis findings as calculated evidence: use their explicit houses and translations, and never reconstruct the relationship from a single displayed house number. Find the 4 to 6 main threads of this chart: evidence that repeats, angular emphasis, the nodal axis, close star contacts, supplied Genesis patterns, and in transit modes the strongest contacts. Find 2 to 4 real tensions: places where two parts of the chart pull against each other. Then assign evidence to chapters so the chapters do not overlap: each placement is the main subject of at most one chapter. The Mirror chapter gets no evidence of its own, only synthesis.
+
+Rules: use only what the sheet states. Never invent an aspect, house, sign, or star contact; natal patterns/aspects may be used only when explicitly listed in the internal Genesis findings. Treat Genesis as a hidden astrology-knowledge stage, not as a user-facing report. Evidence entries must be exact point names from the sheet, such as "Sun", "Moon", "Ascendant", "North Node", "Regulus", "Transit Saturn". Write insights as hypotheses about how a person may experience the pattern, in plain language.
 
 Return ONLY valid JSON, no markdown fence, in this shape:
 {"threads":[{"title":"","insight":"","evidence":["Sun"],"chapters":["identity"]}],"tensions":[{"between":"","insight":"","evidence":["Moon"]}],"chapters":{"identity":{"angle":"what this chapter should uniquely say","evidence":["Sun"]},"mind-heart":{"angle":"","evidence":[]},"relationships":{"angle":"","evidence":[]},"work-purpose":{"angle":"","evidence":[]},"destiny":{"angle":"","evidence":[]}}}`;
@@ -314,7 +348,9 @@ function chapterSystem(mode: ReadingMode, chapter: { title: string; subtitle: st
 - The evidence sheet is the only source of chart facts. Never recalculate or invent a placement, house, sign, aspect, star contact, or any biography. If it is not on the sheet, it does not exist for this reading.
 - Use each placement exactly as the sheet states it. Never call the lunar nodes retrograde.
 - Stay consistent with every fact in earlier chapters.
-- God View uses fixed Aries-to-Pisces houses and never an Ascendant. Agent View uses the personal Equal House placements. If the Moon is flagged uncertain, give the supplied date range, not one degree.
+- God View uses fixed Aries-to-Pisces houses and never an Ascendant. Agent View uses the personal Equal House placements. Use the supplied canonical God/Agent translation and Genesis findings; do not infer or recalculate the relationship. If the Moon is flagged uncertain, give the supplied date range, not one degree.
+- Genesis is internal astrology knowledge and rule processing, not a user-facing report. Apply its supplied placement meanings and relationship rules to the interpretation; never mention Genesis, scores, or internal report labels.
+- ${ASTROLOGY_INTERPRETATION_ADAPTER}
 - ${MODE_GUIDANCE[mode]}`,
     `METHOD
 - Follow the reading plan: write the threads and evidence assigned to this chapter. Weigh repeated evidence over isolated details. Name contradictions instead of smoothing them.
@@ -337,7 +373,7 @@ export async function generateChapter(chart: ChartResult, mode: ReadingMode, int
   const chapter = READING_CHAPTERS.find(item => item.id === chapterId);
   if (!chapter) throw new Error("That reading chapter is not available.");
   const facts = buildEvidenceSheet(chart, mode);
-  const context = completedChapters.length ? `Already written chapters, full text below. Do not repeat any point, placement meaning, scene, or advice already made in them. Stay consistent with every fact they state, and put new weight on evidence they left untouched.${chapterId === "mirror" ? " This is the Mirror: synthesize across all chapters into the few threads that actually connect them. Do not re-list evidence." : ""}\n\n${completedChapters.join("\n\n---\n\n")}` : "This is the opening chapter; establish the emotional and narrative foundation.";
+    const context = completedChapters.length ? `Already written chapters, full text below. Do not repeat any point, placement meaning, scene, or advice already made in them. Stay consistent with every fact they state, and put new weight on evidence they left untouched.${chapterId === "mirror" ? " This is the Mirror: use the internal Genesis rules and the supplied God/Agent translations to synthesize the natal story across all chapters into one understandable outcome. Do not mention Genesis, re-list evidence, or output an engine report." : ""}\n\n${completedChapters.join("\n\n---\n\n")}` : "This is the opening chapter; establish the emotional and narrative foundation.";
   return ask([
     { role: "system", content: chapterSystem(mode, chapter) },
     { role: "user", content: `${facts}\n\n${chapterPlan(analysis, chapterId)}\n\n${context}\n\nWrite the complete ${chapter.title} chapter now.` },

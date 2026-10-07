@@ -49,7 +49,7 @@ const HOUSE_THEMES: Record<number, { label: string; themes: string[]; private: b
   12: { label: "withdrawal and preparation", themes: ["private work", "closure", "behind-the-scenes development"], private: true, visible: false },
 };
 
-function houseThemes(house: number) {
+export function houseThemesFor(house: number) {
   return HOUSE_THEMES[house] ?? { label: "an unclassified field", themes: [], private: false, visible: false };
 }
 
@@ -62,8 +62,8 @@ function isOppositeHouse(first: number, second: number) {
  * observer-specific Equal House frame. It never recalculates a longitude.
  */
 export function buildFrameRelationship(godHouse: number, agentHouse: number): FrameRelationship {
-  const god = houseThemes(godHouse);
-  const agent = houseThemes(agentHouse);
+  const god = houseThemesFor(godHouse);
+  const agent = houseThemesFor(agentHouse);
   const same = godHouse === agentHouse;
   const concealment = agentHouse === 12;
   const tension = !same && !concealment && isOppositeHouse(godHouse, agentHouse);
