@@ -4,7 +4,7 @@ const mocked = vi.hoisted(() => ({ invokeLLM: vi.fn() }));
 vi.mock("./_core/llm", () => ({ invokeLLM: mocked.invokeLLM }));
 
 import { askHost } from "./host";
-import { followUp, generateChapter } from "./interpretation";
+import { followUp, generateChapter, generateInterpretation } from "./interpretation";
 import { calculateChart } from "./astronomy";
 import { buildDualFrameEvidence } from "./genesisPatternReport";
 import type { ChartResult } from "./astronomy";
@@ -40,7 +40,8 @@ beforeEach(() => {
 
 describe("Master Interpreter prompt coverage", () => {
   it("keeps the full supplied operating instructions and astrology-only source-of-truth adapter", () => {
-    expect(MASTER_INTERPRETER_PROMPT.split(/\s+/)).toHaveLength(3172);
+    expect(MASTER_INTERPRETER_PROMPT.split(/\s+/).length).toBeGreaterThan(3000);
+    expect(MASTER_INTERPRETER_PROMPT).toContain("XVII. DECISIVE DELIVERY");
     expect(MASTER_INTERPRETER_PROMPT).toContain("KNOWLEDGE IS THE MATERIAL.");
     expect(MASTER_INTERPRETER_PROMPT).toContain("UNDERSTANDING IS THE RESULT.");
     expect(MASTER_INTERPRETER_PROMPT).not.toContain("The next thing I'd build");
@@ -61,7 +62,7 @@ describe("Master Interpreter prompt coverage", () => {
     expect(system).toContain("FACTS");
     expect(system).toContain(ASTROLOGY_INTERPRETATION_ADAPTER);
     expect(system).toContain("VOICE");
-    expect(system.indexOf("VOICE")).toBeGreaterThan(system.indexOf("METHOD"));
+    expect(system.indexOf("VOICE (this governs how everything above sounds")).toBeGreaterThan(system.lastIndexOf("\nMETHOD\n"));
     expect(system.split(/\s+/).length).toBeLessThan(900);
     expect(user).toContain("CHART EVIDENCE SHEET");
     expect(user).toContain("INTERNAL GENESIS KNOWLEDGE");
@@ -102,6 +103,43 @@ describe("Master Interpreter prompt coverage", () => {
     expect(natalFindings.length).toBeGreaterThan(0);
     for (const finding of natalFindings) expect(user).toContain(finding.meaning);
     expect(systemPromptFromLastCall()).toContain("Genesis is internal astrology knowledge");
+  });
+
+  it("applies a decisive, direct voice to planning, natal/transit/combined chapters, Mirror, and follow-ups", async () => {
+    const natal = await calculateChart({
+      location: "Dallas, Texas, USA",
+      latitude: 32.7767,
+      longitude: -96.797,
+      timezone: "America/Chicago",
+      date: "1986-11-20",
+      time: "10:06",
+      worldview: "agent-vs-god",
+      readingScope: "natal",
+    });
+
+    await generateInterpretation(natal, "natal");
+    let system = systemPromptFromLastCall();
+    expect(system).toContain("AUTHORITATIVE, DECISIVE VOICE");
+    expect(system).toContain("direct, authoritative language");
+    expect(system).not.toContain("Write insights as hypotheses");
+
+    for (const mode of ["natal", "transit", "combined"] as const) {
+      await generateChapter(natal, mode, "", "identity", [], "");
+      system = systemPromptFromLastCall();
+      expect(system).toContain("AUTHORITATIVE, DECISIVE VOICE");
+      expect(system).toContain("direct, declarative present-tense language");
+      expect(system).not.toContain("Use conditional language");
+      expect(system).not.toContain("Psychological readings are hypotheses");
+    }
+
+    await generateChapter(natal, "natal", "", "mirror", [], "");
+    expect(systemPromptFromLastCall()).toContain("direct, declarative present-tense language");
+
+    await followUp(natal, { intelligence: "synthetic", reading: "synthetic" }, [], "What does this mean?", "combined");
+    system = systemPromptFromLastCall();
+    expect(system).toContain("FOLLOW-UP VOICE AND METHOD");
+    expect(system).toContain("Lead with the clearest chart-supported answer");
+    expect(system).not.toContain("conditional hypotheses to test");
   });
 
   it("attaches the Master Interpreter to chart-anchored interpretive follow-ups", async () => {
