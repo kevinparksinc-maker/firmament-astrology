@@ -232,11 +232,15 @@ export function InterpretationPanel({
   initialMode = "combined",
   initialQuestion = "",
   onModeChange,
+  startRequest = null,
+  onStartHandled,
 }: {
   chart: ChartResult;
   initialMode?: ReadingMode;
   initialQuestion?: string;
   onModeChange?: (mode: ReadingMode) => void;
+  startRequest?: { id: number; mode: ReadingMode } | null;
+  onStartHandled?: (requestId: number) => void;
 }) {
   const [mode, setMode] = useState<ReadingMode>(initialMode);
   const prevInitialModeRef = useRef<ReadingMode>(initialMode);
@@ -251,6 +255,7 @@ export function InterpretationPanel({
   const [collapsedChapters, setCollapsedChapters] = useState<
     Record<string, boolean>
   >({});
+  const lastStartRequestIdRef = useRef(0);
 
   useEffect(() => {
     setActiveQuestion(initialQuestion);
@@ -308,7 +313,8 @@ export function InterpretationPanel({
   const generateChapterAt = async (
     base: Interpretation,
     index: number,
-    questionOverride = activeQuestion
+    questionOverride = activeQuestion,
+    readingMode: ReadingMode = mode
   ) => {
     const chapter = base.chapters[index];
     if (!chapter) return;
@@ -320,7 +326,7 @@ export function InterpretationPanel({
     try {
       const result = await chapterMutation.mutateAsync({
         chart,
-        mode,
+        mode: readingMode,
         intelligence: base.intelligence,
         chapterId: chapter.id as never,
         completedChapters: completed,
@@ -336,11 +342,11 @@ export function InterpretationPanel({
         ),
       };
       setInterpretation(updatedBase);
-      saveCachedReading(chart, mode, updatedBase, messages);
+      saveCachedReading(chart, readingMode, updatedBase, messages);
       setCollapsedChapters(prev => ({ ...prev, [chapter.id]: false }));
       const nextIndex = index + 1;
       if (nextIndex < base.chapters.length)
-        await generateChapterAt(updatedBase, nextIndex, questionOverride);
+        await generateChapterAt(updatedBase, nextIndex, questionOverride, readingMode);
     } catch (error) {
       updateChapter(chapter.id, {
         status: "error",
@@ -351,9 +357,14 @@ export function InterpretationPanel({
       });
     }
   };
-  const run = async (questionOverride?: string) => {
+  const run = async (
+    questionOverride?: string,
+    readingMode: ReadingMode = mode
+  ) => {
     const q = (questionOverride ?? activeQuestion).trim();
     if (questionOverride !== undefined) setActiveQuestion(questionOverride);
+    setMode(readingMode);
+    onModeChange?.(readingMode);
     setInterpretation(null);
     setMessages([]);
     setFollowUps([]);
@@ -362,17 +373,32 @@ export function InterpretationPanel({
     try {
       const base = await generate.mutateAsync({
         chart,
-        mode,
+        mode: readingMode,
         question: q || undefined,
       });
       const initial = { ...base, chapters: base.chapters as Chapter[] };
       setInterpretation(initial);
-      saveCachedReading(chart, mode, initial, []);
-      await generateChapterAt(initial, 0, q);
+      saveCachedReading(chart, readingMode, initial, []);
+      await generateChapterAt(initial, 0, q, readingMode);
     } finally {
       setIsGeneratingReading(false);
     }
   };
+
+  useEffect(() => {
+    if (!startRequest || startRequest.id === lastStartRequestIdRef.current) return;
+    lastStartRequestIdRef.current = startRequest.id;
+    onStartHandled?.(startRequest.id);
+    const cached = loadCachedReading(chart, startRequest.mode);
+    if (cached) {
+      setMode(startRequest.mode);
+      setInterpretation(cached.interpretation);
+      setMessages(cached.messages);
+      return;
+    }
+    void run(undefined, startRequest.mode);
+  }, [chart, onStartHandled, run, startRequest]);
+
   const retryChapter = async (index: number) => {
     if (!interpretation) return;
     setIsGeneratingReading(true);

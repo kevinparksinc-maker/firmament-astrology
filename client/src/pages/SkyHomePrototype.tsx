@@ -518,6 +518,12 @@ export default function SkyHomePrototype() {
     "Who am I beneath the surface, and how does the current sky interact with my core patterns?"
   );
   const [activeChart, setActiveChart] = useState<ChartResult | null>(null);
+  const [readingStartRequest, setReadingStartRequest] = useState<{
+    id: number;
+    mode: ReadingScope;
+  } | null>(null);
+  const [isStartingReading, setIsStartingReading] = useState(false);
+  const [readingStartError, setReadingStartError] = useState<string | null>(null);
 
   const geo = trpc.hybrid.geocode.useQuery(
     { query: locationInput },
@@ -531,13 +537,13 @@ export default function SkyHomePrototype() {
     nextWorldview: Worldview = worldview,
     nextScope: ReadingScope = readingScope,
     nextProfile = profile
-  ) => {
+  ): Promise<ChartResult> => {
     const now = new Date();
     const transitDate = now.toISOString().slice(0, 10);
     const transitTime = now.toISOString().slice(11, 16);
 
     if (nextWorldview === "god") {
-      calculateMutation.mutate({
+      return calculateMutation.mutateAsync({
         location: nextProfile.location || "God View",
         latitude: 0,
         longitude: 0,
@@ -555,7 +561,7 @@ export default function SkyHomePrototype() {
         birthTimeKnown: Boolean(nextProfile.time),
       });
     } else {
-      calculateMutation.mutate({
+      return calculateMutation.mutateAsync({
         ...nextProfile,
         transitLocation: nextProfile.location,
         transitLatitude: nextProfile.latitude,
@@ -571,15 +577,14 @@ export default function SkyHomePrototype() {
   };
 
   useEffect(() => {
-    loadSky("agent-vs-god", "combined", DEFAULT_PROFILE);
+    void loadSky("agent-vs-god", "combined", DEFAULT_PROFILE).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (readingScope === "natal" || screen === "guide") return;
-    const id = window.setInterval(
-      () => loadSky(worldview, readingScope, profile),
-      5 * 60 * 1000
-    );
+    const id = window.setInterval(() => {
+      void loadSky(worldview, readingScope, profile).catch(() => {});
+    }, 5 * 60 * 1000);
     return () => window.clearInterval(id);
   }, [worldview, readingScope, profile, screen]);
 
@@ -596,9 +601,29 @@ export default function SkyHomePrototype() {
           timezone: res.data.timezone,
         };
         setProfile(next);
+      } else {
+        throw new Error("That birth location could not be found. Check the city and try again.");
       }
     }
-    loadSky(worldview, readingScope, next);
+    return loadSky(worldview, readingScope, next);
+  };
+
+  const beginPersonalReading = async () => {
+    setIsStartingReading(true);
+    setReadingStartError(null);
+    try {
+      await resolveAndLoadPersonalSky();
+      setScreen("guide");
+      setReadingStartRequest({ id: Date.now() + Math.random(), mode: readingScope });
+    } catch (error) {
+      setReadingStartError(
+        error instanceof Error
+          ? error.message
+          : "Your chart could not be prepared. Check the birth details and try again."
+      );
+    } finally {
+      setIsStartingReading(false);
+    }
   };
 
   const moonLongitude =
@@ -716,7 +741,7 @@ export default function SkyHomePrototype() {
                       aria-selected={worldview === item.value}
                       onClick={() => {
                         setWorldview(item.value);
-                        loadSky(item.value, readingScope, profile);
+                        void loadSky(item.value, readingScope, profile).catch(() => {});
                       }}
                       className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${
                         worldview === item.value
@@ -749,7 +774,7 @@ export default function SkyHomePrototype() {
                       aria-selected={readingScope === item.value}
                       onClick={() => {
                         setReadingScope(item.value);
-                        loadSky(worldview, item.value, profile);
+                        void loadSky(worldview, item.value, profile).catch(() => {});
                       }}
                       className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${
                         readingScope === item.value
@@ -766,8 +791,15 @@ export default function SkyHomePrototype() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => loadSky(worldview, readingScope, profile)}
-                  disabled={calculateMutation.isPending}
+                  onClick={() => {
+                    setReadingStartError(null);
+                    void loadSky(worldview, readingScope, profile).catch(error =>
+                      setReadingStartError(
+                        error instanceof Error ? error.message : "The chart could not be updated."
+                      )
+                    );
+                  }}
+                  disabled={calculateMutation.isPending || isStartingReading}
                   className="border-slate-700 bg-slate-900 text-xs text-slate-200 hover:bg-slate-800"
                 >
                   {calculateMutation.isPending ? (
@@ -806,14 +838,42 @@ export default function SkyHomePrototype() {
                 <Button
                   type="button"
                   size="sm"
-                  onClick={resolveAndLoadPersonalSky}
-                  disabled={calculateMutation.isPending || geo.isFetching}
+                  onClick={() => {
+                    setReadingStartError(null);
+                    void resolveAndLoadPersonalSky().catch(error =>
+                      setReadingStartError(
+                        error instanceof Error ? error.message : "The chart could not be updated."
+                      )
+                    );
+                  }}
+                  disabled={calculateMutation.isPending || geo.isFetching || isStartingReading}
                   className="h-9 whitespace-nowrap bg-violet-500 px-3 text-xs font-semibold text-white hover:bg-violet-400"
                 >
                   <MapPin className="mr-1 h-3.5 w-3.5" />
                   Update
                 </Button>
               </div>
+              <Button
+                type="button"
+                onClick={() => void beginPersonalReading()}
+                disabled={isStartingReading || calculateMutation.isPending || geo.isFetching}
+                aria-busy={isStartingReading || calculateMutation.isPending || geo.isFetching}
+                className="mt-2 h-10 w-full bg-cyan-400 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+              >
+                {isStartingReading || calculateMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <BookOpen className="mr-2 h-4 w-4" />
+                )}
+                {isStartingReading || calculateMutation.isPending
+                  ? "Preparing your reading…"
+                  : `Begin ${readingScope === "natal" ? "Natal" : readingScope === "transit" ? "Transit" : "Natal + Transit"} Reading`}
+              </Button>
+              {readingStartError && (
+                <p role="alert" className="mt-2 text-xs leading-5 text-rose-300">
+                  {readingStartError}
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -1027,6 +1087,12 @@ export default function SkyHomePrototype() {
               initialMode={readingScope}
               initialQuestion={guideQuestion}
               onModeChange={nextMode => setReadingScope(nextMode)}
+              startRequest={readingStartRequest}
+              onStartHandled={requestId =>
+                setReadingStartRequest(current =>
+                  current?.id === requestId ? null : current
+                )
+              }
             />
           ) : (
             <div className="rounded-2xl border border-slate-800 bg-[#0b101b] p-8 text-center text-sm text-slate-400">
