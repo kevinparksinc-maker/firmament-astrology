@@ -1,0 +1,21 @@
+/* User-directed polish: clean journey rows with Firmament's own night palette. */
+.fg2050-portal-heading{align-items:center;margin:18px 0 18px;gap:20px}
+.fg2050-portal-heading h3{font-size:clamp(28px,2.7vw,38px);margin:8px 0}
+.fg2050-portal-heading p{margin:0;max-width:560px}
+.fg2050-depth-switch{background:rgba(3,8,17,.86);border-color:rgba(145,231,246,.2)}
+.fg2050-depth-switch button.active{background:linear-gradient(115deg,#a8edf2,#e8d2a5);color:#0c1724}
+.fg2050-portals{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;max-width:1000px}
+.fg2050-portal{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:14px 17px;min-height:100px;padding:15px 18px;border:1px solid rgba(177,199,237,.15);border-radius:15px;background:linear-gradient(105deg,rgba(16,28,48,.94),rgba(7,13,25,.97));box-shadow:0 10px 26px rgba(0,0,0,.16);transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.fg2050-portal:hover{transform:translateY(-1px);border-color:rgba(145,231,246,.48);background:linear-gradient(105deg,rgba(21,38,61,.96),rgba(8,15,28,.98))}
+.fg2050-portal:focus-visible{outline:2px solid #91e7f6;outline-offset:3px}
+.fg2050-portal-icon{width:44px;height:44px;margin:0;border-color:rgba(145,231,246,.2);border-radius:12px;background:rgba(75,190,214,.09);color:#a2e7f2}
+.fg2050-portal-copy{display:block;min-width:0}
+.fg2050-portal-top{display:block;margin:0 0 4px;color:#91aec0;font-size:9px;letter-spacing:.14em;line-height:1.35}
+.fg2050-portal strong{display:block;color:#f5f7fa;font-size:15px;letter-spacing:-.015em;line-height:1.35}
+.fg2050-portal-summary{display:block;margin-top:4px;color:#a6b4c5;font-size:12px;line-height:1.55}
+.fg2050-portal-cta{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:max-content;color:#d7c18e;font-size:11px;font-weight:750}
+.fg2050-portal-cta svg{color:#9fe4f0;flex:0 0 auto}
+@media(max-width:1180px){.fg2050-portals{grid-template-columns:minmax(0,1fr)}.fg2050-portal{min-height:96px}}
+@media(max-width:760px){.fg2050-portal-heading{align-items:stretch;gap:12px}.fg2050-portals{gap:9px}.fg2050-portal{padding:13px 15px;gap:12px}.fg2050-portal-summary{font-size:11px}}
+@media(max-width:440px){.fg2050-portal{grid-template-columns:40px minmax(0,1fr) 22px;gap:10px;padding:12px}.fg2050-portal-icon{width:39px;height:39px}.fg2050-portal-cta span{display:none}.fg2050-portal-cta{min-width:0}.fg2050-portal-top{font-size:8px}}
+@media(prefers-reduced-motion:reduce){.fg2050-portal{transition:none}}

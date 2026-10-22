@@ -1,3 +1,4 @@
+import { GoogleGenAI } from "@google/genai";
 import { ENV } from "./env";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
@@ -67,6 +68,7 @@ export type InvokeParams = {
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
   model?: string;
+  signal?: AbortSignal;
   thinking?: Record<string, unknown>;
   reasoning?: Record<string, unknown>;
 };
@@ -98,6 +100,11 @@ export type InvokeResult = {
     completion_tokens: number;
     total_tokens: number;
   };
+};
+
+type ProviderResponse = InvokeResult & {
+  output_text?: string;
+  output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
 };
 
 export type JsonSchema = {
@@ -218,13 +225,29 @@ const resolveApiUrl = () =>
     : "https://forge.manus.im/v1/chat/completions";
 
 const assertApiKey = () => {
-  if (!ENV.anthropicApiKey && !ENV.forgeApiKey && !ENV.openaiApiKey) {
-    throw new Error("ANTHROPIC_API_KEY, OPENAI_API_KEY, or BUILT_IN_FORGE_API_KEY is not configured");
+  if (!ENV.geminiApiKey && !ENV.anthropicApiKey && !ENV.forgeApiKey && !ENV.openaiApiKey) {
+    throw new Error("GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or BUILT_IN_FORGE_API_KEY is not configured");
   }
 };
 
 const contentToText = (content: Message["content"]): string =>
   ensureArray(content).map(part => typeof part === "string" ? part : part.type === "text" ? part.text : "").join("\n");
+
+const responseContentToText = (content: unknown): string => {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map(part => {
+    if (typeof part === "string") return part;
+    return part && typeof part === "object" && "text" in part && typeof part.text === "string" ? part.text : "";
+  }).filter(Boolean).join("\n");
+};
+
+const readableAssistantText = (result: ProviderResponse): string => {
+  const choiceText = responseContentToText(result.choices?.[0]?.message?.content);
+  if (choiceText.trim()) return choiceText;
+  if (typeof result.output_text === "string" && result.output_text.trim()) return result.output_text;
+  return result.output?.flatMap(item => item.content ?? []).map(item => item.text ?? "").filter(Boolean).join("\n") ?? "";
+};
 
 async function invokeAnthropic(params: InvokeParams): Promise<InvokeResult> {
   const system = params.messages.filter(message => message.role === "system").map(message => contentToText(message.content)).join("\n\n");
@@ -245,6 +268,7 @@ async function invokeAnthropic(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": ENV.anthropicApiKey, "anthropic-version": "2023-06-01" },
     body: JSON.stringify(body),
+    signal: params.signal,
   });
   if (!response.ok) {
     const errorText = await response.text();
@@ -260,27 +284,44 @@ async function invokeOpenAI(params: InvokeParams): Promise<InvokeResult> {
   const headers = { "content-type": "application/json", authorization: `Bearer ${ENV.openaiApiKey}` };
   const messages = params.messages.map(normalizeMessage);
   const max_tokens = params.max_tokens ?? params.maxTokens ?? 4096;
-  const reasoning = params.reasoning || params.thinking
-    ? { effort: "minimal" }
-    : undefined;
-  for (const model of ["gpt-5-mini", "gpt-5-nano"]) {
-    const response = await fetchWithBackoff(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, messages, max_tokens, ...(reasoning ? { reasoning } : {}) }),
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      if (model === "gpt-5-nano") throw new Error(`OpenAI-compatible invoke failed: ${response.status} ${response.statusText} – ${errorText}`);
-      continue;
+  const requestedModel = params.model && !params.model.startsWith("claude") ? params.model : undefined;
+  const models = requestedModel ? [requestedModel] : ["gpt-5-mini", "gpt-5-nano"];
+  let lastFailure = "no readable message";
+
+  for (const model of models) {
+    // Some compatible gateways return an empty message when reasoning consumes
+    // the completion budget. Retry the same model with a plain request before
+    // switching models, rather than repeating the same request shape.
+    const requestVariants = [
+      { max_tokens, ...(params.reasoning || params.thinking ? { reasoning: { effort: "minimal" } } : {}) },
+      { max_completion_tokens: max_tokens },
+    ];
+    for (const requestOptions of requestVariants) {
+      const response = await fetchWithBackoff(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, messages, ...requestOptions }),
+        signal: params.signal,
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        lastFailure = `provider error ${response.status}: ${errorText.slice(0, 300)}`;
+        continue;
+      }
+      const result = await response.json() as ProviderResponse;
+      const choice = result.choices?.[0];
+      const text = readableAssistantText(result);
+      if (text.trim()) {
+        if (!choice?.message?.content) {
+          result.choices = [{ index: 0, message: { role: "assistant", content: text }, finish_reason: choice?.finish_reason ?? "stop" }];
+        }
+        return result;
+      }
+      lastFailure = `model ${model} returned no visible text (finish_reason=${choice?.finish_reason ?? "unknown"})`;
+      console.warn(`OpenAI-compatible ${lastFailure}; trying a compatible fallback request`);
     }
-    const result = await response.json() as InvokeResult;
-    const choice = result.choices?.[0];
-    const content = choice?.message?.content;
-    if (typeof content === "string" && content.trim()) return result;
-    console.warn(`OpenAI-compatible model ${model} returned no visible text (finish_reason=${choice?.finish_reason ?? "unknown"}); trying fallback`);
   }
-  throw new Error("OpenAI-compatible provider returned no readable message after fallback retry");
+  throw new Error(`OpenAI-compatible provider returned no readable message after fallback retries (${lastFailure})`);
 }
 
 const normalizeResponseFormat = ({
@@ -335,8 +376,20 @@ const LLM_REQUEST_TIMEOUT_MS = 150_000;
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
-const sleep = (ms: number) =>
-  new Promise<void>(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number, signal?: AbortSignal | null) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason ?? new Error("LLM request aborted."));
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason ?? new Error("LLM request aborted."));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 
 const parseRetryAfter = (value: string | null): number | undefined => {
   if (!value) return undefined;
@@ -368,13 +421,17 @@ const fetchWithBackoff = async (
 
   for (let attempt = 0; attempt <= RETRY_MAX_RETRIES; attempt++) {
     try {
+      if (init.signal?.aborted) throw init.signal.reason ?? new Error("LLM request aborted.");
       const controller = new AbortController();
+      const onAbort = () => controller.abort(init.signal?.reason);
+      init.signal?.addEventListener("abort", onAbort, { once: true });
       const timeout = setTimeout(() => controller.abort(), LLM_REQUEST_TIMEOUT_MS);
       let response: Response;
       try {
         response = await fetch(url, { ...init, signal: controller.signal });
       } finally {
         clearTimeout(timeout);
+        init.signal?.removeEventListener("abort", onAbort);
       }
       if (response.ok || attempt === RETRY_MAX_RETRIES) {
         return response;
@@ -391,14 +448,14 @@ const fetchWithBackoff = async (
       console.warn(
         `LLM request retry ${attempt + 1}/${RETRY_MAX_RETRIES} after status ${response.status}`
       );
-      await sleep(computeBackoffDelay(attempt, retryAfterMs));
+      await sleep(computeBackoffDelay(attempt, retryAfterMs), init.signal);
     } catch (error) {
       lastError = error;
-      if (attempt === RETRY_MAX_RETRIES) throw error;
+      if (init.signal?.aborted || attempt === RETRY_MAX_RETRIES) throw error;
       console.warn(
         `LLM request retry ${attempt + 1}/${RETRY_MAX_RETRIES} after network error`
       );
-      await sleep(computeBackoffDelay(attempt));
+      await sleep(computeBackoffDelay(attempt), init.signal);
     }
   }
 
@@ -407,10 +464,64 @@ const fetchWithBackoff = async (
     : new Error("LLM request failed after exhausting retries");
 };
 
+async function invokeGemini(params: InvokeParams): Promise<InvokeResult> {
+  const ai = new GoogleGenAI({
+    apiKey: ENV.geminiApiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+  const systemInstruction = params.messages
+    .filter(message => message.role === "system")
+    .map(message => contentToText(message.content))
+    .join("\n\n");
+  const contents = params.messages
+    .filter(message => message.role !== "system" && (message.role === "user" || message.role === "assistant"))
+    .map(message => ({
+      role: message.role === "assistant" ? "model" : "user",
+      parts: [{ text: contentToText(message.content) }],
+    }));
+
+  const normalizedResponseFormat = normalizeResponseFormat({
+    responseFormat: params.responseFormat,
+    response_format: params.response_format,
+    outputSchema: params.outputSchema,
+    output_schema: params.output_schema,
+  });
+
+  const response = await ai.models.generateContent({
+    model: "gemini-3.8-flash",
+    contents: contents.length > 0 ? contents : "Hello",
+    config: {
+      ...(systemInstruction ? { systemInstruction } : {}),
+      ...(normalizedResponseFormat?.type === "json_object" || normalizedResponseFormat?.type === "json_schema"
+        ? { responseMimeType: "application/json" }
+        : {}),
+    },
+  });
+
+  const text = response.text ?? "";
+  return {
+    id: `gemini-${Date.now()}`,
+    created: Math.floor(Date.now() / 1000),
+    model: "gemini-3.8-flash",
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: text },
+        finish_reason: "stop",
+      },
+    ],
+  };
+}
+
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   assertApiKey();
   if (ENV.anthropicApiKey) return invokeAnthropic(params);
   if (ENV.openaiApiKey && ENV.openaiApiBase) return invokeOpenAI(params);
+  if (ENV.geminiApiKey && !ENV.forgeApiKey) return invokeGemini(params);
 
   const {
     messages,
@@ -478,6 +589,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       authorization: `Bearer ${ENV.forgeApiKey}`,
     },
     body: JSON.stringify(payload),
+    signal: params.signal,
   });
 
   if (!response.ok) {

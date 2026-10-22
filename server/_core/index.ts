@@ -1,5 +1,7 @@
 import "dotenv/config";
 import express from "express";
+import fs from "fs";
+import path from "path";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -38,11 +40,59 @@ async function startServer() {
     res.json({
       apiUrl: process.env.MANUS_API_URL ?? "",
       browserKey: process.env.MANUS_API_BROWSER_KEY ?? "",
+      appId: process.env.MANUS_PROJECT_ID ?? process.env.VITE_APP_ID ?? "",
+      oauthPortalUrl: process.env.MANUS_OAUTH_PORTAL_URL ?? process.env.VITE_OAUTH_PORTAL_URL ?? "",
     });
+  });
+  app.get("/api/maps/javascript", async (req, res) => {
+    const apiUrl = process.env.MANUS_API_URL ?? "";
+    const browserKey = process.env.MANUS_API_BROWSER_KEY ?? "";
+    const requestedOrigin = typeof req.query.origin === "string" ? req.query.origin : "";
+    let origin: URL;
+    try {
+      origin = new URL(requestedOrigin);
+      if (origin.protocol !== "https:" && origin.protocol !== "http:") throw new Error("Unsupported origin protocol");
+    } catch {
+      res.status(400).json({ error: "A valid application origin is required" });
+      return;
+    }
+    if (!apiUrl || !browserKey) {
+      res.status(503).json({ error: "Maps runtime configuration is unavailable" });
+      return;
+    }
+    const mapsUrl = new URL(`${apiUrl.replace(/\/+$/, "")}/v1/maps/proxy/maps/api/js`);
+    mapsUrl.searchParams.set("key", browserKey);
+    mapsUrl.searchParams.set("v", "weekly");
+    mapsUrl.searchParams.set("libraries", "marker,places,geocoding,geometry");
+    try {
+      const mapsResponse = await fetch(mapsUrl, {
+        headers: {
+          Origin: origin.origin,
+          Referer: `${origin.origin}/`,
+        },
+      });
+      const body = await mapsResponse.text();
+      res.status(mapsResponse.status).set("Content-Type", "application/javascript; charset=utf-8").send(body);
+    } catch (error) {
+      console.error("Google Maps script proxy failed", error);
+      res.status(502).json({ error: "Google Maps script proxy failed" });
+    }
   });
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.post("/api/background-music", express.raw({ type: "*/*", limit: "80mb" }), (req, res) => {
+    try {
+      const targetDir = path.resolve(process.cwd(), "client", "public", "assets");
+      fs.mkdirSync(targetDir, { recursive: true });
+      const targetPath = path.join(targetDir, "firmament-inner-peace-528hz.mp3");
+      fs.writeFileSync(targetPath, req.body);
+      res.json({ ok: true, path: "/assets/firmament-inner-peace-528hz.mp3" });
+    } catch (error) {
+      console.error("Failed to save background music", error);
+      res.status(500).json({ error: "Failed to save background music" });
+    }
+  });
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   // tRPC API
@@ -63,15 +113,10 @@ async function startServer() {
     serveStatic(app);
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const port = parseInt(process.env.PORT || "3000", 10);
 
-  if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
-  }
-
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${port}/`);
   });
 }
 

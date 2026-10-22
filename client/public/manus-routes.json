@@ -1,20 +1,9 @@
 {
   "routes": [
-    {
-      "path": "/",
-      "title": "Firmament Guardian"
-    },
-    {
-      "path": "/sky",
-      "title": "Firmament Sky Home"
-    },
-    {
-      "path": "/horary",
-      "title": "Horary Chart Reading"
-    },
-    {
-      "path": "/history",
-      "title": "Private Sky Archive"
-    }
+    { "path": "/", "title": "Firmament Guardian" },
+    { "path": "/sky", "title": "Celestial Map" },
+    { "path": "/horary", "title": "Horary Chart Reading" },
+    { "path": "/zodiac-readings", "title": "Twelve Celestial Gates" },
+    { "path": "/history", "title": "Reading Library" }
   ]
 }

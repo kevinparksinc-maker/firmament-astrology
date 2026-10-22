@@ -1,4 +1,4 @@
-# Firmament Guardian
+# 12 Gates of the Firmament
 
 A TypeScript astrology and interpretation app: a dark, interactive observatory for natal charts, transit readings, and AI-guided chart interpretation, including Horary charts.
 
@@ -39,6 +39,13 @@ pnpm start    # run the production build
 ```
 
 A `Dockerfile` is included for containerized runs.
+
+## Production deployment
+
+The production container runs the compiled server with `pnpm start`, listens on the
+platform-provided `PORT` (defaulting to `3000`), and exposes `/health` as an
+unauthenticated readiness endpoint. The published frontend is built into
+`dist/public`; the server handles `/api/*` and the SPA fallback serves client routes.
 
 ## Configuration
 

@@ -33,15 +33,18 @@ describe("Hybrid Zodiac constants and overlays", () => {
     expect(FIXED_STARS.find(([name]) => name === "Fomalhaut")?.[1]).toBe(315);
   });
   it("starts the overlay wheel at tropical Aries", () => {
-    expect(overlay(0)).toMatchObject({ nakshatra: "Ashwini", pada: 1, manzil: "Al-Sharatain", decan: "Mars (Aries 1st)" });
+    expect(overlay(0)).toMatchObject({ nakshatra: "Ashwini", pada: 1, manzil: "Al-Sharatain", decan: "Aries (Aries 1st elemental decan)" });
     expect(formatLongitude(12.9333)).toBe("Aries 12°56′");
   });
-  it("uses observer-specific topocentric planetary positions in Agent View", async () => {
-    const newYork = await calculateChart({ location: "New York", latitude: 40.7128, longitude: -74.006, timezone: "America/New_York", date: "1986-11-20", time: "10:06", worldview: "agent", readingScope: "natal" });
-    const tokyo = await calculateChart({ location: "Tokyo", latitude: 35.6762, longitude: 139.6503, timezone: "Asia/Tokyo", date: "1986-11-20", time: "10:06", worldview: "agent", readingScope: "natal" });
-    const nyMoon = newYork.movingBodies.find(row => row.name === "Moon")!.longitude;
-    const tokyoMoon = tokyo.movingBodies.find(row => row.name === "Moon")!.longitude;
-    expect(Math.abs(nyMoon - tokyoMoon)).toBeGreaterThan(0.1);
+  it("keeps canonical geocentric longitudes while exposing lunar parallax separately", async () => {
+    const newYork = await calculateChart({ location: "New York", latitude: 40.7128, longitude: -74.006, timezone: "UTC", date: "1986-11-20", time: "10:06", worldview: "agent", readingScope: "natal" });
+    const tokyo = await calculateChart({ location: "Tokyo", latitude: 35.6762, longitude: 139.6503, timezone: "UTC", date: "1986-11-20", time: "10:06", worldview: "agent", readingScope: "natal" });
+    const nyMoon = newYork.movingBodies.find(row => row.name === "Moon")!;
+    const tokyoMoon = tokyo.movingBodies.find(row => row.name === "Moon")!;
+    expect(nyMoon.longitude).toBeCloseTo(tokyoMoon.longitude, 8);
+    expect(nyMoon.topocentricLongitude).toBeDefined();
+    expect(tokyoMoon.topocentricLongitude).toBeDefined();
+    expect(Math.abs(nyMoon.topocentricLongitude! - tokyoMoon.topocentricLongitude!)).toBeGreaterThan(0.1);
   });
   it("supports date-only God Natal calculations without inventing personal angles", async () => {
     const result = await calculateChart({ location: "", latitude: 0, longitude: 0, timezone: "", date: "1986-11-20", time: "", worldview: "god", readingScope: "natal", birthTimeKnown: false });
