@@ -49,6 +49,7 @@ export default function HoraryPage() {
   const [time, setTime] = useState(initialMoment.time);
   const [horary, setHorary] = useState<HoraryResult | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [castAttempted, setCastAttempted] = useState(false);
 
   const geocode = trpc.hybrid.geocode.useQuery({ query: locationQuery }, { enabled: false, retry: false });
   const birthGeocode = trpc.hybrid.geocode.useQuery({ query: birthLocationQuery }, { enabled: false, retry: false });
@@ -83,10 +84,25 @@ export default function HoraryPage() {
   const locationIsResolved = Boolean(place && place.query === locationQuery.trim());
   const birthLocationIsResolved = Boolean(birthPlace && birthPlace.query === birthLocationQuery.trim());
   const hasCompleteNatal = birthLocationIsResolved && birthDate.length === 10 && birthTime.length === 5;
-  const canCast = question.trim().length >= 10 && topicHouse !== "" && locationIsResolved && date.length === 10 && time.length === 5 && !cast.isPending;
+  const missingCastRequirements = [
+    ...(question.trim().length < 10 ? [{ fieldId: "horary-question", message: "enter a question with at least 10 characters" }] : []),
+    ...(topicHouse === "" ? [{ fieldId: "horary-topic", message: "choose the topic house" }] : []),
+    ...(!locationIsResolved ? [{ fieldId: "horary-location", message: locationQuery.trim().length >= 2 ? "resolve the question location" : "enter and resolve where you asked" }] : []),
+    ...(date.length !== 10 ? [{ fieldId: "horary-date", message: "set the local date" }] : []),
+    ...(time.length !== 5 ? [{ fieldId: "horary-time", message: "set the local time" }] : []),
+  ];
+  const canCast = missingCastRequirements.length === 0 && !cast.isPending;
 
   const castQuestion = () => {
-    if (!canCast || !place) return;
+    if (!canCast || !place) {
+      setCastAttempted(true);
+      const firstMissing = missingCastRequirements[0];
+      const target = document.getElementById(firstMissing?.fieldId ?? "horary-location");
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      target?.focus({ preventScroll: true });
+      return;
+    }
+    setCastAttempted(false);
     cast.reset();
     setHorary(null);
     setMessages([]);
@@ -147,7 +163,8 @@ export default function HoraryPage() {
               <div className="space-y-3 rounded-xl border border-amber-200/15 bg-amber-100/[0.035] p-4"><div><p className="text-xs uppercase tracking-[.18em] text-amber-200">Optional natal layer</p><p className="mt-1 text-xs leading-5 text-slate-500">Add the person’s birth details to compare the question-time transit against their natal chart. Leave blank for a horary + God View reading without a personal natal layer.</p></div><div className="flex gap-2"><Input id="birth-location" value={birthLocationQuery} onChange={event => setBirthLocationQuery(event.target.value)} placeholder="Birth city, region, country" className="border-white/10 bg-black/20 text-white"/><Button type="button" variant="outline" onClick={resolveBirthPlace} disabled={birthGeocode.isFetching || birthLocationQuery.trim().length < 2} className="shrink-0 border-white/10 bg-white/[0.04] text-amber-100 hover:bg-white/[0.08]"><MapPin className="mr-2 h-4 w-4"/>{birthGeocode.isFetching ? "Resolving" : "Resolve"}</Button></div>{birthLocationIsResolved && birthPlace && <p className="text-xs text-emerald-200">{birthPlace.latitude.toFixed(4)}°, {birthPlace.longitude.toFixed(4)}° · {birthPlace.timezone}</p>}<div className="grid gap-3 sm:grid-cols-2"><Input aria-label="Birth date" type="date" value={birthDate} onChange={event => setBirthDate(event.target.value)} className="border-white/10 bg-black/20 text-white"/><Input aria-label="Birth time" type="time" value={birthTime} onChange={event => setBirthTime(event.target.value)} className="border-white/10 bg-black/20 text-white"/></div>{birthLocationQuery && !hasCompleteNatal && <p className="text-xs text-amber-200">Resolve the birth place and enter both birth date and time to enable the natal layer.</p>}</div>
               <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="horary-date" className="text-slate-200">Local date asked</Label><Input id="horary-date" type="date" value={date} onChange={event => setDate(event.target.value)} className="border-white/10 bg-black/20 text-white"/></div><div className="space-y-2"><Label htmlFor="horary-time" className="text-slate-200">Local time asked</Label><Input id="horary-time" type="time" value={time} onChange={event => setTime(event.target.value)} className="border-white/10 bg-black/20 text-white"/></div></div>
               {cast.error && <div role="alert" className="rounded-xl border border-rose-300/20 bg-rose-400/[0.08] p-3 text-sm text-rose-200">{cast.error.message}</div>}
-              <Button type="button" onClick={castQuestion} disabled={!canCast} className="h-12 w-full bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-50">{cast.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Casting the question chart and preparing your reading…</> : <><Orbit className="mr-2 h-4 w-4"/>Cast chart & interpret</>}</Button>
+              {castAttempted && missingCastRequirements.length > 0 && <div id="horary-cast-requirements" role="alert" className="rounded-xl border border-amber-200/20 bg-amber-200/[0.06] p-3 text-sm text-amber-100">To cast, {missingCastRequirements.map(item => item.message).join("; ")}. Birth details are optional.</div>}
+              <Button type="button" onClick={castQuestion} disabled={cast.isPending} aria-describedby={castAttempted && missingCastRequirements.length > 0 ? "horary-cast-requirements" : undefined} className="h-12 w-full bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-50">{cast.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Casting the question chart and preparing your reading…</> : <><Orbit className="mr-2 h-4 w-4"/>Cast chart &amp; interpret</>}</Button>
             </CardContent>
           </Card>
 
